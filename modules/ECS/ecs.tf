@@ -100,10 +100,10 @@ resource "aws_ecs_task_definition" "nginx-task-def" {
       containerPort = 80
       hostPort      = 80
     }]
-    secrets = [{
-      name      = "demo"  # Environment variable name inside the container
-      valueFrom = var.secret_arn
-    }]
+    # secrets = [{
+    #   name      = "demo"  # Environment variable name inside the container
+    #   valueFrom = var.secret_arn
+    # }]
   }])
 
   runtime_platform {
