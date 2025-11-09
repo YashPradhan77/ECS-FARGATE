@@ -1,0 +1,107 @@
+name: CI_CD_Deploy_ECS
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  ECR_REPO: nginx-app   
+  ECS_CLUSTER: nginx-cluster    
+  ECS_SERVICE: nginx-service
+  TASKDEF_PATH: infra/ecs/nginx-service/taskdef.base.json   # base task def in repo
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_CI }}          # ECR push perms
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: build
+        run: |
+          ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
+          REPO_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/nginx-app"
+          TAG="$(echo "${GITHUB_SHA}" | cut -c1-8)"
+
+          docker build -t "${REPO_URI}:${TAG}" .
+          docker push "${REPO_URI}:${TAG}"
+
+          DIGEST=$(aws ecr describe-images \
+            --repository-name "nginx-app" \
+            --image-ids imageTag="${TAG}" \
+            --query 'imageDetails[0].imageDigest' --output text)
+
+          echo "IMAGE_URI=${REPO_URI}@${DIGEST}" | tee image-meta.txt
+          echo "TAG=${TAG}" | tee -a image-meta.txt
+
+      - name: Upload artifact (image digest)
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-meta
+          path: image-meta.txt
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: image-meta
+          path: .
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_CI }}          # ECS deploy perms
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Render task definition with image digest
+        id: render
+        run: |
+          IMAGE_URI=$(grep '^IMAGE_URI=' image-meta.txt | cut -d= -f2)
+
+          # ensure jq exists
+          sudo apt-get update -y && sudo apt-get install -y jq
+
+          # inject image into first container; adjust index if needed
+          jq --arg IMG "$IMAGE_URI" \
+             '.containerDefinitions[0].image = $IMG' \
+             "${TASKDEF_PATH}" > taskdef.rendered.json
+
+      - name: Register task definition
+        id: register
+        run: |
+          TD_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://taskdef.rendered.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "TD_ARN=$TD_ARN" >> $GITHUB_OUTPUT
+
+      - name: Update ECS service (rolling)
+        run: |
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER}" \
+            --service "${ECS_SERVICE}" \
+            --task-definition "${{ steps.register.outputs.TD_ARN }}" \
+            --force-new-deployment
+
+      - name: Wait for service stability
+        run: |
+          aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}"

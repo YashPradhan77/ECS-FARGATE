@@ -1,0 +1,10 @@
+# outputs.tf in security-groups module
+output "alb_sg_id" {
+  description = "The ID of the ALB security group"
+  value       = aws_security_group.alb-sg.id
+}
+
+output "ecs_sg_id" {
+  description = "The ID of the ECS security group"
+  value       = aws_security_group.ecs-sg.id
+}
