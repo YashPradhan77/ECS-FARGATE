@@ -14,6 +14,7 @@ env:
   ECS_CLUSTER: nginx-cluster    
   ECS_SERVICE: nginx-service
   TASKDEF_PATH: ecs/nginx-service/taskdef.base.json  # base task def in repo
+  CONTAINER_NAME: nginx
 
 jobs:
   build-and-push:
@@ -41,12 +42,11 @@ jobs:
           docker push "${REPO_URI}:${TAG}"
 
           DIGEST=$(aws ecr describe-images \
-            --repository-name "nginx-app" \
+            --repository-name "${ECR_REPO}" \
             --image-ids imageTag="${TAG}" \
             --query 'imageDetails[0].imageDigest' --output text)
 
           echo "IMAGE_URI=${REPO_URI}@${DIGEST}" | tee image-meta.txt
-          echo "TAG=${TAG}" | tee -a image-meta.txt
 
       - name: Upload artifact (image digest)
         uses: actions/upload-artifact@v4
@@ -105,15 +105,23 @@ jobs:
       # - name: Wait for service stability
       #   run: |
       #     aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}"
+      - name: Load IMAGE_URI into env
+        run: |
+          IMAGE_URI=$(grep '^IMAGE_URI=' image-meta.txt | cut -d= -f2)
+          echo "IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
 
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${TASK_DEFINITION}" \
+            --query taskDefinition > task-definition.json
       - name: Render new task definition
         id: render
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
-          container-name: nginx-app
-          image: ${{ needs.build-and-push.outputs.image-uri }}
-
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ env.IMAGE_URI }}
       - name: Deploy rendered task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
