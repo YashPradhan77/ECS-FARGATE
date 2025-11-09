@@ -99,7 +99,7 @@ variable "alb_listener_dependency" {
   type        = any
 }
 
-variable "secret_arn" {
-  description = "ARN of the Secrets Manager secret"
-  type        = string
-}
+# variable "secret_arn" {
+#   description = "ARN of the Secrets Manager secret"
+#   type        = string
+# }

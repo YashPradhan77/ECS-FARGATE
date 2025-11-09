@@ -33,7 +33,7 @@ module "ecs" {
   task_memory          = 512
   image_name           = "nginx"
   image                = "898896902478.dkr.ecr.us-west-2.amazonaws.com/nginx-app:latest"
-  secret_arn           = "arn:aws:secretsmanager:us-west-2:898896902478:secret:demo-bf3Wd7"  
+  # secret_arn           = ""  
 
   service_name         = "nginx-service"
   desired_count        = 1
