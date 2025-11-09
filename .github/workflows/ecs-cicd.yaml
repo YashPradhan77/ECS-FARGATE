@@ -13,7 +13,8 @@ env:
   ECR_REPO: nginx-app   
   ECS_CLUSTER: nginx-cluster    
   ECS_SERVICE: nginx-service
-  TASKDEF_PATH: ecs/nginx-service/taskdef.base.json  # base task def in repo
+  TASK_DEFINITION: nginx
+  # TASKDEF_PATH: ecs/nginx-service/taskdef.base.json  # base task def in repo
   CONTAINER_NAME: nginx
 
 jobs:
