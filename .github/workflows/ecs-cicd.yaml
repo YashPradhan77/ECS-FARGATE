@@ -13,7 +13,7 @@ env:
   ECR_REPO: nginx-app   
   ECS_CLUSTER: nginx-cluster    
   ECS_SERVICE: nginx-service
-  TASKDEF_PATH: infra/ecs/nginx-service/taskdef.base.json   # base task def in repo
+  TASKDEF_PATH: ecs/nginx-service/taskdef.base.json  # base task def in repo
 
 jobs:
   build-and-push:
@@ -73,35 +73,51 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_CI }}          # ECS deploy perms
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Render task definition with image digest
+      # - name: Render task definition with image digest
+      #   id: render
+      #   run: |
+      #     IMAGE_URI=$(grep '^IMAGE_URI=' image-meta.txt | cut -d= -f2)
+
+      #     # ensure jq exists
+      #     sudo apt-get update -y && sudo apt-get install -y jq
+
+      #     # inject image into first container; adjust index if needed
+      #     jq --arg IMG "$IMAGE_URI" \
+      #        '.containerDefinitions[0].image = $IMG' \
+      #        "${TASKDEF_PATH}" > taskdef.rendered.json
+
+      # - name: Register task definition
+      #   id: register
+      #   run: |
+      #     TD_ARN=$(aws ecs register-task-definition \
+      #       --cli-input-json file://taskdef.rendered.json \
+      #       --query 'taskDefinition.taskDefinitionArn' --output text)
+      #     echo "TD_ARN=$TD_ARN" >> $GITHUB_OUTPUT
+
+      # - name: Update ECS service (rolling)
+      #   run: |
+      #     aws ecs update-service \
+      #       --cluster "${ECS_CLUSTER}" \
+      #       --service "${ECS_SERVICE}" \
+      #       --task-definition "${{ steps.register.outputs.TD_ARN }}" \
+      #       --force-new-deployment
+
+      # - name: Wait for service stability
+      #   run: |
+      #     aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}"
+
+      - name: Render new task definition
         id: render
-        run: |
-          IMAGE_URI=$(grep '^IMAGE_URI=' image-meta.txt | cut -d= -f2)
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ needs.build-and-push.outputs.image-uri }}
 
-          # ensure jq exists
-          sudo apt-get update -y && sudo apt-get install -y jq
-
-          # inject image into first container; adjust index if needed
-          jq --arg IMG "$IMAGE_URI" \
-             '.containerDefinitions[0].image = $IMG' \
-             "${TASKDEF_PATH}" > taskdef.rendered.json
-
-      - name: Register task definition
-        id: register
-        run: |
-          TD_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file://taskdef.rendered.json \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "TD_ARN=$TD_ARN" >> $GITHUB_OUTPUT
-
-      - name: Update ECS service (rolling)
-        run: |
-          aws ecs update-service \
-            --cluster "${ECS_CLUSTER}" \
-            --service "${ECS_SERVICE}" \
-            --task-definition "${{ steps.register.outputs.TD_ARN }}" \
-            --force-new-deployment
-
-      - name: Wait for service stability
-        run: |
-          aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}"
+      - name: Deploy rendered task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
