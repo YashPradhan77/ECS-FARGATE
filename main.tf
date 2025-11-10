@@ -31,8 +31,8 @@ module "ecs" {
   
   task_cpu             = 256
   task_memory          = 512
-  image_name           = "nginx-app"
-  image                = "898896902478.dkr.ecr.us-west-2.amazonaws.com/nginx-app:latest"
+  image_name           = "nginx"
+  image                = "898896902478.dkr.ecr.us-west-2.amazonaws.com/nginx-app"
   # secret_arn           = ""  
 
   service_name         = "nginx-service"

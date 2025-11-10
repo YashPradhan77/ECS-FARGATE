@@ -15,7 +15,7 @@ env:
   ECS_SERVICE: nginx-service
   TASK_DEFINITION: nginx
   # TASKDEF_PATH: ecs/nginx-service/taskdef.base.json  # base task def in repo
-  CONTAINER_NAME: nginx-app
+  CONTAINER_NAME: nginx 
 
 jobs:
   build-and-push:
